@@ -525,6 +525,7 @@ pub enum FrameItem {
     /// An introspectable element that produced something within this frame
     /// alongside its key.
     Tag(Tag),
+    ContentHint(char),
 }
 
 impl Debug for FrameItem {
@@ -536,6 +537,7 @@ impl Debug for FrameItem {
             Self::Image(image, _, _) => write!(f, "{image:?}"),
             Self::Link(dest, _) => write!(f, "Link({dest:?})"),
             Self::Tag(tag) => write!(f, "{tag:?}"),
+            Self::ContentHint(ch) => write!(f, "Content({ch})"),
         }
     }
 }

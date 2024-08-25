@@ -357,6 +357,7 @@ pub(crate) fn write_frame(ctx: &mut Builder, frame: &Frame) {
             FrameItem::Image(image, size, _) => write_image(ctx, x, y, image, *size),
             FrameItem::Link(dest, size) => write_link(ctx, pos, dest, *size),
             FrameItem::Tag(_) => {}
+            FrameItem::ContentHint(_) => {}
         }
     }
 }
