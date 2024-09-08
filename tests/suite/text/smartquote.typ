@@ -28,7 +28,7 @@
 "Το άλογο δεν τρώει αγγουροσαλάτα" ήταν η πρώτη πρόταση που ειπώθηκε στο 'τηλέφωνο'.
 
 #set text(lang: "he")
-"הסוס לא אוכל סלט מלפפונים" היה המשפט ההראשון שנאמר ב 'טלפון'.
+"הסוס לא אוכל סלט מלפפונים" היה המשפט ההראשון שנאמר ב'טלפון'.
 
 #set text(lang: "ro")
 "Calul nu mănâncă salată de castraveți" a fost prima propoziție rostită vreodată la 'telefon'.
@@ -56,7 +56,28 @@ He said "I'm a big fella."
 
 --- smartquote-escape ---
 // Test escape sequences.
-The 5\'11\" 'quick\' brown fox jumps over the \"lazy" dog\'s ear.
+The 5\'11\" 'quick\' brown fox jumps over the \"lazy' dog\'s ear.
+
+--- smartquote-slash ---
+// Test that smartquotes can open before non-whitespace if not nested.
+"Hello"/"World" \
+'"Hello"/"World"' \
+""Hello"/"World""
+
+--- smartquote-close-before-letter ---
+// Test that smartquotes can close before alphabetic letters.
+Straight "A"s and "B"s
+
+--- smartquote-prime ---
+// Test that primes result after numbers when possible.
+A 2" nail. \
+'A 2" nail.' \
+"A 2" nail."
+
+--- smartquote-bracket ---
+// Test that brackets indicate an opening quote.
+"a ["b"] c" \
+"a b"c"d e"
 
 --- smartquote-disable ---
 // Test turning smart quotes off.

@@ -6,24 +6,30 @@ use std::collections::HashSet;
 use std::num::NonZeroUsize;
 
 use comemo::{Track, Tracked, TrackedMut};
+use once_cell::unsync::Lazy;
 
 use crate::diag::{bail, At, SourceResult};
 use crate::engine::{Engine, Route, Sink, Traced};
 use crate::foundations::{
-    Content, NativeElement, Packed, Resolve, Smart, StyleChain, Styles,
+    Content, NativeElement, Packed, Resolve, SequenceElem, Smart, StyleChain, Styles,
 };
 use crate::introspection::{
-    Counter, CounterDisplayElem, CounterKey, Introspector, Location, Locator,
-    LocatorLink, ManualPageCounter, SplitLocator, Tag, TagElem, TagKind,
+    Counter, CounterDisplayElem, CounterKey, CounterState, CounterUpdate, Introspector,
+    Location, Locator, LocatorLink, ManualPageCounter, SplitLocator, Tag, TagElem,
+    TagKind,
 };
 use crate::layout::{
     Abs, AlignElem, Alignment, Axes, Binding, BlockElem, ColbreakElem, ColumnsElem, Dir,
     FixedAlignment, FlushElem, Fr, Fragment, Frame, FrameItem, HAlignment, Length,
-    OuterVAlignment, Page, PageElem, PagebreakElem, Paper, Parity, PlaceElem, Point,
-    Ratio, Region, Regions, Rel, Sides, Size, Spacing, VAlignment, VElem,
+    OuterHAlignment, OuterVAlignment, Page, PageElem, PagebreakElem, Paper, Parity,
+    PlaceElem, Point, Ratio, Region, Regions, Rel, Sides, Size, Spacing, VAlignment,
+    VElem,
 };
-use crate::model::{Document, FootnoteElem, FootnoteEntry, Numbering, ParElem};
-use crate::realize::{first_span, realize_root, realizer_container, Arenas, Pair};
+use crate::model::{
+    Document, DocumentInfo, FootnoteElem, FootnoteEntry, Numbering, ParElem, ParLine,
+    ParLineMarker, ParLineNumberingScope,
+};
+use crate::realize::{realize, Arenas, Pair, RealizationKind};
 use crate::syntax::Span;
 use crate::text::TextElem;
 use crate::utils::{NonZeroExt, Numeric};
@@ -34,7 +40,7 @@ use crate::World;
 enum PageItem<'a> {
     /// A page run containing content. All runs will be layouted in parallel.
     Run(&'a [Pair<'a>], StyleChain<'a>, Locator<'a>),
-    /// Tags in between pages. These will be preprended to the first start of
+    /// Tags in between pages. These will be prepended to the first start of
     /// the next page, or appended at the very end of the final page if there is
     /// no next page.
     Tags(&'a [Pair<'a>]),
@@ -110,8 +116,15 @@ fn layout_document_impl(
     let styles = StyleChain::new(&styles);
 
     let arenas = Arenas::default();
-    let (mut children, info) =
-        realize_root(&mut engine, &mut locator, &arenas, content, styles)?;
+    let mut info = DocumentInfo::default();
+    let mut children = realize(
+        RealizationKind::Root(&mut info),
+        &mut engine,
+        &mut locator,
+        &arenas,
+        content,
+        styles,
+    )?;
 
     let pages = layout_pages(&mut engine, &mut children, locator, styles)?;
 
@@ -387,7 +400,6 @@ fn layout_page_run_impl(
     // Determine the page-wide styles.
     let styles = determine_page_styles(children, initial);
     let styles = StyleChain::new(&styles);
-    let span = first_span(children);
 
     // When one of the lengths is infinite the page fits its content along
     // that axis.
@@ -443,8 +455,7 @@ fn layout_page_run_impl(
             Smart::Custom(numbering.clone()),
             both,
         )
-        .pack()
-        .spanned(span);
+        .pack();
 
         // We interpret the Y alignment as selecting header or footer
         // and then ignore it for aligning the actual number.
@@ -467,12 +478,12 @@ fn layout_page_run_impl(
     let fragment = FlowLayouter::new(
         &mut engine,
         children,
-        locator.next(&span).split(),
+        &mut locator,
         styles,
         regions,
         PageElem::columns_in(styles),
         ColumnsElem::gutter_in(styles),
-        span,
+        Span::detached(),
         &mut vec![],
     )
     .layout(regions)?;
@@ -726,15 +737,20 @@ fn layout_fragment_impl(
 
     engine.route.check_layout_depth().at(content.span())?;
 
-    // If we are in a `PageElem`, this might already be a realized flow.
     let arenas = Arenas::default();
-    let children =
-        realizer_container(&mut engine, &mut locator, &arenas, content, styles)?;
+    let children = realize(
+        RealizationKind::Container,
+        &mut engine,
+        &mut locator,
+        &arenas,
+        content,
+        styles,
+    )?;
 
     FlowLayouter::new(
         &mut engine,
         &children,
-        locator,
+        &mut locator,
         styles,
         regions,
         columns,
@@ -746,9 +762,9 @@ fn layout_fragment_impl(
 }
 
 /// Layouts a collection of block-level elements.
-struct FlowLayouter<'a, 'e> {
+struct FlowLayouter<'a, 'b> {
     /// The engine.
-    engine: &'a mut Engine<'e>,
+    engine: &'a mut Engine<'b>,
     /// The children that will be arranged into a flow.
     children: &'a [Pair<'a>],
     /// A span to use for errors.
@@ -756,7 +772,7 @@ struct FlowLayouter<'a, 'e> {
     /// Whether this is the root flow.
     root: bool,
     /// Provides unique locations to the flow's children.
-    locator: SplitLocator<'a>,
+    locator: &'a mut SplitLocator<'b>,
     /// The shared styles.
     shared: StyleChain<'a>,
     /// The number of columns.
@@ -798,11 +814,17 @@ struct FootnoteConfig {
     gap: Abs,
 }
 
+/// Information needed to generate a line number.
+struct CollectedParLine {
+    y: Abs,
+    marker: Packed<ParLineMarker>,
+}
+
 /// A prepared item in a flow layout.
 #[derive(Debug)]
 enum FlowItem {
-    /// Spacing between other items and whether it is weak.
-    Absolute(Abs, bool),
+    /// Spacing between other items and its weakness level.
+    Absolute(Abs, u8),
     /// Fractional spacing between other items.
     Fractional(Fr),
     /// A frame for a layouted block.
@@ -813,6 +835,12 @@ enum FlowItem {
         align: Axes<FixedAlignment>,
         /// Whether the frame sticks to the item after it (for orphan prevention).
         sticky: bool,
+        /// Whether the frame comes from a rootable block, which may be laid
+        /// out as a root flow and thus display its own line numbers.
+        /// Therefore, we do not display line numbers for these frames.
+        ///
+        /// Currently, this is only used by columns.
+        rootable: bool,
         /// Whether the frame is movable; that is, kept together with its
         /// footnotes.
         ///
@@ -858,13 +886,13 @@ impl FlowItem {
     }
 }
 
-impl<'a, 'e> FlowLayouter<'a, 'e> {
+impl<'a, 'b> FlowLayouter<'a, 'b> {
     /// Create a new flow layouter.
     #[allow(clippy::too_many_arguments)]
     fn new(
-        engine: &'a mut Engine<'e>,
+        engine: &'a mut Engine<'b>,
         children: &'a [Pair<'a>],
-        locator: SplitLocator<'a>,
+        locator: &'a mut SplitLocator<'b>,
         shared: StyleChain<'a>,
         mut regions: Regions<'a>,
         columns: NonZeroUsize,
@@ -970,8 +998,10 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
                 self.handle_place(elem, styles)?;
             } else if let Some(elem) = child.to_packed::<FlushElem>() {
                 self.handle_flush(elem)?;
+            } else if child.is::<PagebreakElem>() {
+                bail!(child.span(), "pagebreaks are not allowed inside of containers");
             } else {
-                bail!(child.span(), "unexpected flow child");
+                bail!(child.span(), "{} is not allowed here", child.func().name());
             }
         }
 
@@ -985,14 +1015,39 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
 
     /// Layout vertical spacing.
     fn handle_v(&mut self, v: &'a Packed<VElem>, styles: StyleChain) -> SourceResult<()> {
-        self.handle_item(match v.amount {
+        self.layout_spacing(v.amount, styles, v.weak(styles) as u8)
+    }
+
+    /// Layout spacing, handling weakness.
+    fn layout_spacing(
+        &mut self,
+        amount: impl Into<Spacing>,
+        styles: StyleChain,
+        weakness: u8,
+    ) -> SourceResult<()> {
+        self.handle_item(match amount.into() {
             Spacing::Rel(rel) => FlowItem::Absolute(
                 // Resolve the spacing relative to the current base height.
                 rel.resolve(styles).relative_to(self.initial.y),
-                v.weakness(styles) > 0,
+                weakness,
             ),
             Spacing::Fr(fr) => FlowItem::Fractional(fr),
         })
+    }
+
+    /// Trim trailing weak spacing from the items.
+    fn trim_weak_spacing(&mut self) {
+        for (i, item) in self.items.iter().enumerate().rev() {
+            match item {
+                FlowItem::Absolute(amount, 1..) => {
+                    self.regions.size.y += *amount;
+                    self.items.remove(i);
+                    return;
+                }
+                FlowItem::Frame { .. } => return,
+                _ => {}
+            }
+        }
     }
 
     /// Layout a column break.
@@ -1015,6 +1070,7 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
         // Fetch properties.
         let align = AlignElem::alignment_in(styles).resolve(styles);
         let leading = ParElem::leading_in(styles);
+        let spacing = ParElem::spacing_in(styles);
         let costs = TextElem::costs_in(styles);
 
         // Layout the paragraph into lines. This only depends on the base size,
@@ -1059,10 +1115,12 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
         let back_2 = height_at(len.saturating_sub(2));
         let back_1 = height_at(len.saturating_sub(1));
 
+        self.layout_spacing(spacing, styles, 4)?;
+
         // Layout the lines.
         for (i, mut frame) in lines.into_iter().enumerate() {
             if i > 0 {
-                self.handle_item(FlowItem::Absolute(leading, true))?;
+                self.layout_spacing(leading, styles, 5)?;
             }
 
             // To prevent widows and orphans, we require enough space for
@@ -1093,11 +1151,14 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
                 frame,
                 align,
                 sticky: false,
+                rootable: false,
                 movable: true,
             })?;
         }
 
+        self.layout_spacing(spacing, styles, 4)?;
         self.last_was_par = true;
+
         Ok(())
     }
 
@@ -1110,12 +1171,18 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
         // Fetch properties.
         let sticky = block.sticky(styles);
         let align = AlignElem::alignment_in(styles).resolve(styles);
+        let rootable = block.rootable(styles);
+        let spacing = Lazy::new(|| (ParElem::spacing_in(styles).into(), 4));
+        let (above, above_weakness) =
+            block.above(styles).map(|v| (v, 3)).unwrap_or_else(|| *spacing);
+        let (below, below_weakness) =
+            block.below(styles).map(|v| (v, 3)).unwrap_or_else(|| *spacing);
 
         // If the block is "rootable" it may host footnotes. In that case, we
         // defer rootness to it temporarily. We disable our own rootness to
         // prevent duplicate footnotes.
         let is_root = self.root;
-        if is_root && block.rootable(styles) {
+        if is_root && rootable {
             self.root = false;
             self.regions.root = true;
         }
@@ -1124,6 +1191,8 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
         if self.regions.is_full() {
             self.finish_region(false)?;
         }
+
+        self.layout_spacing(above, styles, above_weakness)?;
 
         // Layout the block itself.
         let fragment = block.layout(
@@ -1146,10 +1215,17 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
 
             self.drain_tag(&mut frame);
             frame.post_process(styles);
-            self.handle_item(FlowItem::Frame { frame, align, sticky, movable: false })?;
+            self.handle_item(FlowItem::Frame {
+                frame,
+                align,
+                sticky,
+                rootable,
+                movable: false,
+            })?;
         }
 
         self.try_handle_footnotes(notes)?;
+        self.layout_spacing(below, styles, below_weakness)?;
 
         self.root = is_root;
         self.regions.root = false;
@@ -1208,18 +1284,40 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
     /// Layout a finished frame.
     fn handle_item(&mut self, mut item: FlowItem) -> SourceResult<()> {
         match item {
-            FlowItem::Absolute(v, weak) => {
-                if weak
-                    && !self
-                        .items
-                        .iter()
-                        .any(|item| matches!(item, FlowItem::Frame { .. },))
-                {
-                    return Ok(());
+            FlowItem::Absolute(v, weakness) => {
+                if weakness > 0 {
+                    let mut has_frame = false;
+                    for prev in self.items.iter_mut().rev() {
+                        match prev {
+                            FlowItem::Frame { .. } => {
+                                has_frame = true;
+                                break;
+                            }
+                            FlowItem::Absolute(prev_amount, prev_level)
+                                if *prev_level > 0 =>
+                            {
+                                if *prev_level >= weakness {
+                                    let diff = v - *prev_amount;
+                                    if *prev_level > weakness || diff > Abs::zero() {
+                                        self.regions.size.y -= diff;
+                                        *prev = item;
+                                    }
+                                }
+                                return Ok(());
+                            }
+                            FlowItem::Fractional(_) => return Ok(()),
+                            _ => {}
+                        }
+                    }
+                    if !has_frame {
+                        return Ok(());
+                    }
                 }
-                self.regions.size.y -= v
+                self.regions.size.y -= v;
             }
-            FlowItem::Fractional(..) => {}
+            FlowItem::Fractional(..) => {
+                self.trim_weak_spacing();
+            }
             FlowItem::Frame { ref frame, movable, .. } => {
                 let height = frame.height();
                 while !self.regions.size.y.fits(height) && !self.regions.in_last() {
@@ -1265,13 +1363,16 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
 
                 // Select the closer placement, top or bottom.
                 if y_align.is_auto() {
-                    let ratio = (self.regions.size.y
-                        - (frame.height() + clearance) / 2.0)
-                        / self.regions.full;
+                    // When the figure's vertical midpoint would be above the
+                    // middle of the page if it were layouted in-flow, we use
+                    // top alignment. Otherwise, we use bottom alignment.
+                    let used = self.regions.full - self.regions.size.y;
+                    let half = (frame.height() + clearance) / 2.0;
+                    let ratio = (used + half) / self.regions.full;
                     let better_align = if ratio <= 0.5 {
-                        FixedAlignment::End
-                    } else {
                         FixedAlignment::Start
+                    } else {
+                        FixedAlignment::End
                     };
                     *y_align = Smart::Custom(Some(better_align));
                 }
@@ -1341,24 +1442,24 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
     /// only (this is used to force the creation of a frame in case the
     /// remaining elements are all out-of-flow).
     fn finish_region(&mut self, force: bool) -> SourceResult<()> {
+        self.trim_weak_spacing();
+
         // Early return if we don't have any relevant items.
         if !force
             && !self.items.is_empty()
             && self.items.iter().all(FlowItem::is_out_of_flow)
         {
-            self.finished.push(Frame::soft(self.initial));
+            // Run line number layout here even though we have no line numbers
+            // to ensure we reset line numbers at the start of the page if
+            // requested, which is still necessary if e.g. the first column is
+            // empty when the others aren't.
+            let mut output = Frame::soft(self.initial);
+            self.layout_line_numbers(&mut output, self.initial, vec![])?;
+
+            self.finished.push(output);
             self.regions.next();
             self.initial = self.regions.size;
             return Ok(());
-        }
-
-        // Trim weak spacing.
-        while self
-            .items
-            .last()
-            .is_some_and(|item| matches!(item, FlowItem::Absolute(_, true)))
-        {
-            self.items.pop();
         }
 
         // Determine the used size.
@@ -1420,6 +1521,8 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
         let mut float_bottom_offset = Abs::zero();
         let mut footnote_offset = Abs::zero();
 
+        let mut lines: Vec<CollectedParLine> = vec![];
+
         // Place all frames.
         for item in self.items.drain(..) {
             match item {
@@ -1431,12 +1534,20 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
                     let length = v.share(fr, remaining);
                     offset += length;
                 }
-                FlowItem::Frame { frame, align, .. } => {
+                FlowItem::Frame { frame, align, rootable, .. } => {
                     ruler = ruler.max(align.y);
                     let x = align.x.position(size.x - frame.width());
                     let y = offset + ruler.position(size.y - used.y);
                     let pos = Point::new(x, y);
                     offset += frame.height();
+
+                    // Do not display line numbers for frames coming from
+                    // rootable blocks as they will display their own line
+                    // numbers when laid out as a root flow themselves.
+                    if self.root && !rootable {
+                        collect_par_lines(&mut lines, &frame, pos, Abs::zero());
+                    }
+
                     output.push_frame(pos, frame);
                 }
                 FlowItem::Placed { frame, x_align, y_align, delta, float, .. } => {
@@ -1468,6 +1579,10 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
                     let pos = Point::new(x, y)
                         + delta.zip_map(size, Rel::relative_to).to_point();
 
+                    if self.root {
+                        collect_par_lines(&mut lines, &frame, pos, Abs::zero());
+                    }
+
                     output.push_frame(pos, frame);
                 }
                 FlowItem::Footnote(frame) => {
@@ -1477,6 +1592,15 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
                 }
             }
         }
+
+        // Sort, deduplicate and layout line numbers.
+        //
+        // We do this after placing all frames since they might not necessarily
+        // be ordered by height (e.g. you can have a `place(bottom)` followed
+        // by a paragraph, but the paragraph appears at the top), so we buffer
+        // all line numbers to later sort and deduplicate them based on how
+        // close they are to each other in `layout_line_numbers`.
+        self.layout_line_numbers(&mut output, size, lines)?;
 
         if force && !self.pending_tags.is_empty() {
             let pos = Point::with_y(offset);
@@ -1669,6 +1793,158 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
         Ok(())
     }
 
+    /// Layout the given collected lines' line numbers to an output frame.
+    ///
+    /// The numbers are placed either on the left margin (left border of the
+    /// frame) or on the right margin (right border). Before they are placed,
+    /// a line number counter reset is inserted if we're in the first column of
+    /// the page being currently laid out and the user requested for line
+    /// numbers to be reset at the start of every page.
+    fn layout_line_numbers(
+        &mut self,
+        output: &mut Frame,
+        size: Size,
+        mut lines: Vec<CollectedParLine>,
+    ) -> SourceResult<()> {
+        // Reset page-scoped line numbers if currently at the first column.
+        if self.root
+            && (self.columns == 1 || self.finished.len() % self.columns == 0)
+            && ParLine::numbering_scope_in(self.shared) == ParLineNumberingScope::Page
+        {
+            let reset =
+                CounterState::init(&CounterKey::Selector(ParLineMarker::elem().select()));
+            let counter = Counter::of(ParLineMarker::elem());
+            let update = counter.update(Span::detached(), CounterUpdate::Set(reset));
+            let locator = self.locator.next(&update);
+            let pod = Region::new(Axes::splat(Abs::zero()), Axes::splat(false));
+            let reset_frame =
+                layout_frame(self.engine, &update, locator, self.shared, pod)?;
+            output.push_frame(Point::zero(), reset_frame);
+        }
+
+        if lines.is_empty() {
+            // We always stop here if this is not the root flow.
+            return Ok(());
+        }
+
+        // Assume the line numbers aren't sorted by height.
+        // They must be sorted so we can deduplicate line numbers below based
+        // on vertical proximity.
+        lines.sort_by_key(|line| line.y);
+
+        // Buffer line number frames so we can align them horizontally later
+        // before placing, based on the width of the largest line number.
+        let mut line_numbers = vec![];
+        // Used for horizontal alignment.
+        let mut max_number_width = Abs::zero();
+        let mut prev_bottom = None;
+        for line in lines {
+            if prev_bottom.is_some_and(|prev_bottom| line.y < prev_bottom) {
+                // Lines are too close together. Display as the same line
+                // number.
+                continue;
+            }
+
+            let current_column = self.finished.len() % self.columns;
+            let number_margin = if self.columns >= 2 && current_column + 1 == self.columns
+            {
+                // The last column will always place line numbers at the end
+                // margin. This should become configurable in the future.
+                OuterHAlignment::End.resolve(self.shared)
+            } else {
+                line.marker.number_margin().resolve(self.shared)
+            };
+
+            let number_align = line
+                .marker
+                .number_align()
+                .map(|align| align.resolve(self.shared))
+                .unwrap_or_else(|| number_margin.inv());
+
+            let number_clearance = line.marker.number_clearance().resolve(self.shared);
+            let number = self.layout_line_number(line.marker)?;
+            let number_x = match number_margin {
+                FixedAlignment::Start => -number_clearance,
+                FixedAlignment::End => size.x + number_clearance,
+
+                // Shouldn't be specifiable by the user due to
+                // 'OuterHAlignment'.
+                FixedAlignment::Center => unreachable!(),
+            };
+            let number_pos = Point::new(number_x, line.y);
+
+            // Note that this line.y is larger than the previous due to
+            // sorting. Therefore, the check at the top of the loop ensures no
+            // line numbers will reasonably intersect with each other.
+            //
+            // We enforce a minimum spacing of 1pt between consecutive line
+            // numbers in case a zero-height frame is used.
+            prev_bottom = Some(line.y + number.height().max(Abs::pt(1.0)));
+
+            // Collect line numbers and compute the max width so we can align
+            // them later.
+            max_number_width.set_max(number.width());
+            line_numbers.push((number_pos, number, number_align, number_margin));
+        }
+
+        for (mut pos, number, align, margin) in line_numbers {
+            if matches!(margin, FixedAlignment::Start) {
+                // Move the line number backwards the more aligned to the left
+                // it is, instead of moving to the right when it's right
+                // aligned. We do it this way, without fully overriding the
+                // 'x' coordinate, to preserve the original clearance between
+                // the line numbers and the text.
+                pos.x -=
+                    max_number_width - align.position(max_number_width - number.width());
+            } else {
+                // Move the line number forwards when aligned to the right.
+                // Leave as is when aligned to the left.
+                pos.x += align.position(max_number_width - number.width());
+            }
+
+            output.push_frame(pos, number);
+        }
+
+        Ok(())
+    }
+
+    /// Layout the line number associated with the given line marker.
+    ///
+    /// Produces a counter update and counter display with counter key
+    /// `ParLineMarker`. We use `ParLineMarker` as it is an element which is
+    /// not exposed to the user, as we don't want to expose the line number
+    /// counter at the moment, given that its semantics are inconsistent with
+    /// that of normal counters (the counter is updated based on height and not
+    /// on frame order / layer). When we find a solution to this, we should
+    /// switch to a counter on `ParLine` instead, thus exposing the counter as
+    /// `counter(par.line)` to the user.
+    fn layout_line_number(
+        &mut self,
+        marker: Packed<ParLineMarker>,
+    ) -> SourceResult<Frame> {
+        let counter = Counter::of(ParLineMarker::elem());
+        let counter_update = counter
+            .clone()
+            .update(Span::detached(), CounterUpdate::Step(NonZeroUsize::ONE));
+        let counter_display = CounterDisplayElem::new(
+            counter,
+            Smart::Custom(marker.numbering().clone()),
+            false,
+        );
+        let number = SequenceElem::new(vec![counter_update, counter_display.pack()]);
+        let locator = self.locator.next(&number);
+
+        let pod = Region::new(Axes::splat(Abs::inf()), Axes::splat(false));
+        let mut frame =
+            layout_frame(self.engine, &number.pack(), locator, self.shared, pod)?;
+
+        // Ensure the baseline of the line number aligns with the line's own
+        // baseline.
+        frame.translate(Point::with_y(-frame.baseline()));
+
+        Ok(frame)
+    }
+
     /// Collect all footnotes in a frame.
     fn collect_footnotes(
         &mut self,
@@ -1688,6 +1964,54 @@ impl<'a, 'e> FlowLayouter<'a, 'e> {
                 }
                 _ => {}
             }
+        }
+    }
+}
+
+/// Collect all numbered paragraph lines in the frame.
+/// The 'prev_y' parameter starts at 0 on the first call to 'collect_par_lines'.
+/// On each subframe we encounter, we add that subframe's position to 'prev_y',
+/// until we reach a line's tag, at which point we add the tag's position
+/// and finish. That gives us the relative height of the line from the start of
+/// the initial frame.
+fn collect_par_lines(
+    lines: &mut Vec<CollectedParLine>,
+    frame: &Frame,
+    frame_pos: Point,
+    prev_y: Abs,
+) {
+    for (pos, item) in frame.items() {
+        match item {
+            FrameItem::Group(group) => {
+                collect_par_lines(lines, &group.frame, frame_pos, prev_y + pos.y)
+            }
+
+            // Unlike footnotes, we don't need to guard against duplicate tags
+            // here, since we already deduplicate line markers based on their
+            // height later on, in `finish_region`.
+            FrameItem::Tag(tag) => {
+                let Some(marker) = tag.elem().to_packed::<ParLineMarker>() else {
+                    continue;
+                };
+
+                // 1. 'prev_y' is the accumulated relative height from the top
+                // of the frame we're searching so far;
+                // 2. 'prev_y + pos.y' gives us the final relative height of
+                // the line we just found from the top of the initial frame;
+                // 3. 'frame_pos.y' is the height of the initial frame relative
+                // to the root flow (and thus its absolute 'y');
+                // 4. Therefore, 'y' will be the line's absolute 'y' in the
+                // page based on its marker's position, and thus the 'y' we
+                // should use for line numbers. In particular, this represents
+                // the 'y' at the line's general baseline, due to the marker
+                // placement logic within the 'line::commit()' function in the
+                // 'inline' module. We only account for the line number's own
+                // baseline later, upon layout.
+                let y = frame_pos.y + prev_y + pos.y;
+
+                lines.push(CollectedParLine { y, marker: marker.clone() });
+            }
+            _ => {}
         }
     }
 }

@@ -106,6 +106,18 @@ pub struct BoxElem {
     pub outset: Sides<Option<Rel<Length>>>,
 
     /// Whether to clip the content inside the box.
+    ///
+    /// Clipping is useful when the box's content is larger than the box itself,
+    /// as any content that exceeds the box's bounds will be hidden.
+    ///
+    /// ```example
+    /// #box(
+    ///   width: 50pt,
+    ///   height: 50pt,
+    ///   clip: true,
+    ///   image("tiger.jpg", width: 100pt, height: 100pt)
+    /// )
+    /// ```
     #[default(false)]
     pub clip: bool,
 
@@ -182,6 +194,10 @@ impl Packed<BoxElem> {
         // Add fill and/or stroke.
         if fill.is_some() || stroke.iter().any(Option::is_some) {
             frame.fill_and_stroke(fill, &stroke, &outset, &radius, self.span());
+        }
+
+        if let Some(label) = self.label() {
+            frame.group(|group| group.label = Some(label))
         }
 
         Ok(frame)
@@ -422,6 +438,18 @@ pub struct BlockElem {
     pub below: Smart<Spacing>,
 
     /// Whether to clip the content inside the block.
+    ///
+    /// Clipping is useful when the block's content is larger than the block itself,
+    /// as any content that exceeds the block's bounds will be hidden.
+    ///
+    /// ```example
+    /// #block(
+    ///   width: 50pt,
+    ///   height: 50pt,
+    ///   clip: true,
+    ///   image("tiger.jpg", width: 100pt, height: 100pt)
+    /// )
+    /// ```
     #[default(false)]
     pub clip: bool,
 
@@ -633,6 +661,13 @@ impl Packed<BlockElem> {
                     &radius,
                     self.span(),
                 );
+            }
+        }
+
+        // Assign label to each frame in the fragment.
+        if let Some(label) = self.label() {
+            for frame in fragment.iter_mut() {
+                frame.group(|group| group.label = Some(label))
             }
         }
 

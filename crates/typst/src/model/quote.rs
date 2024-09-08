@@ -4,6 +4,7 @@ use crate::foundations::{
     cast, elem, Content, Depth, Label, NativeElement, Packed, Show, ShowSet, Smart,
     StyleChain, Styles,
 };
+use crate::introspection::Locatable;
 use crate::layout::{
     Alignment, BlockChild, BlockElem, Em, HElem, PadElem, Spacing, VElem,
 };
@@ -42,7 +43,7 @@ use crate::text::{SmartQuoteElem, SmartQuotes, SpaceElem, TextElem};
 ///   flame of Udûn. Go back to the Shadow! You cannot pass.
 /// ]
 /// ```
-#[elem(ShowSet, Show)]
+#[elem(Locatable, ShowSet, Show)]
 pub struct QuoteElem {
     /// Whether this is a block quote.
     ///
@@ -159,7 +160,7 @@ impl Show for Packed<QuoteElem> {
         let block = self.block(styles);
 
         if self.quotes(styles) == Smart::Custom(true) || !block {
-            let quotes = SmartQuotes::new(
+            let quotes = SmartQuotes::get(
                 SmartQuoteElem::quotes_in(styles),
                 TextElem::lang_in(styles),
                 TextElem::region_in(styles),
@@ -207,8 +208,9 @@ impl Show for Packed<QuoteElem> {
 
                 // Use v(0.9em, weak: true) bring the attribution closer to the
                 // quote.
-                let weak_v = VElem::weak(Spacing::Rel(Em::new(0.9).into())).pack();
-                realized += weak_v + Content::sequence(seq).aligned(Alignment::END);
+                let gap = Spacing::Rel(Em::new(0.9).into());
+                let v = VElem::new(gap).with_weak(true).pack();
+                realized += v + Content::sequence(seq).aligned(Alignment::END);
             }
 
             realized = PadElem::new(realized).pack();
