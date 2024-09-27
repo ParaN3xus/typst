@@ -22,7 +22,7 @@ use crate::foundations::{
 use crate::introspection::Locator;
 use crate::layout::{
     Abs, Axes, BlockElem, FixedAlignment, Frame, FrameItem, Length, Point, Region, Rel,
-    Size,
+    Size, Sizing,
 };
 use crate::loading::Readable;
 use crate::model::Figurable;
@@ -54,7 +54,9 @@ use crate::World;
 /// [gh-svg]: https://github.com/typst/typst/issues?q=is%3Aopen+is%3Aissue+label%3Asvg
 #[elem(scope, Show, LocalName, Figurable)]
 pub struct ImageElem {
-    /// Path to an image file.
+    /// Path to an image file
+    ///
+    /// For more details, see the [Paths section]($syntax/#paths).
     #[required]
     #[parse(
         let Spanned { v: path, span } =
@@ -79,7 +81,7 @@ pub struct ImageElem {
     pub width: Smart<Rel<Length>>,
 
     /// The height of the image.
-    pub height: Smart<Rel<Length>>,
+    pub height: Sizing,
 
     /// A text describing the image.
     pub alt: Option<EcoString>,
@@ -127,7 +129,7 @@ impl ImageElem {
         width: Option<Smart<Rel<Length>>>,
         /// The height of the image.
         #[named]
-        height: Option<Smart<Rel<Length>>>,
+        height: Option<Sizing>,
         /// A text describing the image.
         #[named]
         alt: Option<Option<EcoString>>,
@@ -368,7 +370,7 @@ impl Image {
         Ok(Self(Arc::new(LazyHash::new(Repr { kind, alt }))))
     }
 
-    /// Create a possibly font-dependant image from a buffer and a format.
+    /// Create a possibly font-dependent image from a buffer and a format.
     #[comemo::memoize]
     #[typst_macros::time(name = "load image")]
     pub fn with_fonts(

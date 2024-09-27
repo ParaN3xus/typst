@@ -8,7 +8,7 @@ use crate::foundations::{
 use crate::introspection::Locator;
 use crate::layout::{
     layout_frame, Abs, Axes, BlockElem, Corner, Corners, Frame, FrameItem, Length, Point,
-    Ratio, Region, Rel, Sides, Size,
+    Ratio, Region, Rel, Sides, Size, Sizing,
 };
 use crate::syntax::Span;
 use crate::utils::Get;
@@ -33,7 +33,7 @@ pub struct RectElem {
     pub width: Smart<Rel<Length>>,
 
     /// The rectangle's height, relative to its parent container.
-    pub height: Smart<Rel<Length>>,
+    pub height: Sizing,
 
     /// How to fill the rectangle.
     ///
@@ -51,7 +51,7 @@ pub struct RectElem {
     /// - `{auto}` for a stroke of `{1pt + black}` if and if only if no fill is
     ///   given.
     /// - Any kind of [stroke]
-    /// - A dictionary describing the stroke for each side inidvidually. The
+    /// - A dictionary describing the stroke for each side individually. The
     ///   dictionary can contain the following keys in order of precedence:
     ///   - `top`: The top stroke.
     ///   - `right`: The right stroke.
@@ -202,9 +202,9 @@ pub struct SquareElem {
     /// height.
     #[parse(match size {
         None => args.named("height")?,
-        size => size,
+        size => size.map(Into::into),
     })]
-    pub height: Smart<Rel<Length>>,
+    pub height: Sizing,
 
     /// How to fill the square. See the [rectangle's documentation]($rect.fill)
     /// for more details.
@@ -293,7 +293,7 @@ pub struct EllipseElem {
     pub width: Smart<Rel<Length>>,
 
     /// The ellipse's height, relative to its parent container.
-    pub height: Smart<Rel<Length>>,
+    pub height: Sizing,
 
     /// How to fill the ellipse. See the [rectangle's documentation]($rect.fill)
     /// for more details.
@@ -399,9 +399,9 @@ pub struct CircleElem {
     /// height.
     #[parse(match size {
         None => args.named("height")?,
-        size => size,
+        size => size.map(Into::into),
     })]
-    pub height: Smart<Rel<Length>>,
+    pub height: Sizing,
 
     /// How to fill the circle. See the [rectangle's documentation]($rect.fill)
     /// for more details.

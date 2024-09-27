@@ -225,7 +225,7 @@ fn collect_items<'a>(
     items
 }
 
-/// Calls `f` for the the BiDi-reordered ranges of a line.
+/// Calls `f` for the BiDi-reordered ranges of a line.
 fn reorder<F>(p: &Preparation, range: Range, mut f: F)
 where
     F: FnMut(Range, bool),
@@ -511,28 +511,25 @@ pub fn commit(
                     let region = Size::new(amount, full);
                     let mut frame =
                         elem.layout(engine, loc.relayout(), *styles, region)?;
-                    frame.post_process(*styles);
                     frame.translate(Point::with_y(TextElem::baseline_in(*styles)));
-                    push(&mut offset, frame);
+                    push(&mut offset, frame.post_processed(*styles));
                 } else {
                     offset += amount;
                 }
             }
             Item::Text(shaped) => {
-                let mut frame = shaped.build(
+                let frame = shaped.build(
                     engine,
                     &p.spans,
                     justification_ratio,
                     extra_justification,
                 );
-                frame.post_process(shaped.styles);
-                push(&mut offset, frame);
+                push(&mut offset, frame.post_processed(shaped.styles));
             }
             Item::Frame(frame, styles) => {
                 let mut frame = frame.clone();
-                frame.post_process(*styles);
                 frame.translate(Point::with_y(TextElem::baseline_in(*styles)));
-                push(&mut offset, frame);
+                push(&mut offset, frame.post_processed(*styles));
             }
             Item::Tag(tag) => {
                 let mut frame = Frame::soft(Size::zero());
