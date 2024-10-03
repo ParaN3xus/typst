@@ -71,9 +71,8 @@ jobs:
           tar cJf $directory.tar.xz $directory
         fi
 
-    - uses: ncipollo/release-action@v1.14.0
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v3.2.1-node20
       with:
-        artifacts: "typst-${{ matrix.target }}.*"
-        allowUpdates: true
-        omitNameDuringUpdate: true
-        omitBodyDuringUpdate: true
+        path: "typst-${{ matrix.target }}.*"
+
