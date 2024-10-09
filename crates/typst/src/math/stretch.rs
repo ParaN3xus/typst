@@ -33,7 +33,8 @@ pub struct StretchElem {
     #[required]
     pub body: Content,
 
-    /// The size to stretch to, relative to the glyph's current size.
+    /// The size to stretch to, relative to the maximum size of the glyph and
+    /// its attachments.
     pub size: Smart<Rel<Length>>,
 }
 
@@ -73,9 +74,15 @@ pub(super) fn stretch_fragment(
         _ => return,
     };
 
-    let Some(axis) = axis.or_else(|| stretch_axis(ctx, &glyph)) else {
+    // Return if we attempt to stretch along an axis which isn't stretchable,
+    // so that the original fragment isn't modified.
+    let Some(stretch_axis) = stretch_axis(ctx, &glyph) else {
         return;
     };
+    let axis = axis.unwrap_or(stretch_axis);
+    if axis != stretch_axis {
+        return;
+    }
 
     let relative_to_size = relative_to.unwrap_or_else(|| fragment.size().get(axis));
 
