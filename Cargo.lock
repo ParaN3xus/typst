@@ -2618,7 +2618,7 @@ checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 
 [[package]]
 name = "typst"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "arrayvec",
  "az",
@@ -2691,7 +2691,7 @@ source = "git+https://github.com/typst/typst-assets?rev=4afd428#4afd428838a8fc99
 
 [[package]]
 name = "typst-cli"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "chrono",
  "clap",
@@ -2739,7 +2739,7 @@ source = "git+https://github.com/typst/typst-dev-assets?rev=e9f8127#e9f81271547c
 
 [[package]]
 name = "typst-docs"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "clap",
  "comemo",
@@ -2762,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "typst-fuzz"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "comemo",
  "libfuzzer-sys",
@@ -2774,7 +2774,7 @@ dependencies = [
 
 [[package]]
 name = "typst-ide"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "comemo",
  "ecow",
@@ -2790,7 +2790,7 @@ dependencies = [
 
 [[package]]
 name = "typst-kit"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "dirs",
  "ecow",
@@ -2810,7 +2810,7 @@ dependencies = [
 
 [[package]]
 name = "typst-macros"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -2820,7 +2820,7 @@ dependencies = [
 
 [[package]]
 name = "typst-pdf"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "arrayvec",
  "base64",
@@ -2846,7 +2846,7 @@ dependencies = [
 
 [[package]]
 name = "typst-render"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "bytemuck",
  "comemo",
@@ -2864,7 +2864,7 @@ dependencies = [
 
 [[package]]
 name = "typst-svg"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "base64",
  "comemo",
@@ -2880,7 +2880,7 @@ dependencies = [
 
 [[package]]
 name = "typst-syntax"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "ecow",
  "once_cell",
@@ -2896,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "typst-tests"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "clap",
  "comemo",
@@ -2920,7 +2920,7 @@ dependencies = [
 
 [[package]]
 name = "typst-timing"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "parking_lot",
  "serde",
@@ -2930,7 +2930,7 @@ dependencies = [
 
 [[package]]
 name = "typst-utils"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "once_cell",
  "portable-atomic",
