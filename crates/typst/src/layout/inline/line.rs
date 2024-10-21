@@ -536,6 +536,11 @@ pub fn commit(
                 frame.push(Point::zero(), FrameItem::Tag((*tag).clone()));
                 frames.push((offset, frame));
             }
+            Item::Hint(c) => {
+                let mut frame = Frame::soft(Size::zero());
+                frame.push(Point::zero(), FrameItem::ContentHint(*c));
+                frames.push((offset, frame));
+            }
             Item::Skip(_) => {}
         }
     }

@@ -162,6 +162,7 @@ impl<'a> Collector<'a, '_, '_> {
                 .push(Child::Line(self.boxed(LineChild { frame, align, need })));
         }
 
+        self.output.push(Child::Hint('\n'));
         self.output.push(Child::Rel(spacing.into(), 4));
         self.last_was_par = true;
 
@@ -302,6 +303,8 @@ pub enum Child<'a> {
     Flush,
     /// An explicit column break.
     Break(bool),
+    /// A hint string for text selection.
+    Hint(char),
 }
 
 /// A child that encapsulates a layouted line of a paragraph.

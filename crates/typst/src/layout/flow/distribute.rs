@@ -64,6 +64,8 @@ enum Item<'a, 'b> {
     Frame(Frame, Axes<FixedAlignment>),
     /// A frame for an absolutely (not floatingly) placed child.
     Placed(Frame, &'b PlacedChild<'a>),
+    /// A hint string for text selection.
+    Hint(char),
 }
 
 impl Item<'_, '_> {
@@ -120,6 +122,9 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
             Child::Placed(placed) => self.placed(placed)?,
             Child::Flush => self.flush()?,
             Child::Break(weak) => self.break_(*weak)?,
+            Child::Hint(c) => {
+                self.items.push(Item::Hint(*c));
+            }
         }
         Ok(())
     }
@@ -170,6 +175,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
                     return false;
                 }
                 Item::Tag(_) | Item::Abs(..) | Item::Placed(..) => {}
+                Item::Hint(_) => {}
                 Item::Fr(.., None) => return false,
                 Item::Frame(..) | Item::Fr(.., Some(_)) => return true,
             }
@@ -187,6 +193,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
                     break;
                 }
                 Item::Tag(_) | Item::Abs(..) | Item::Placed(..) => {}
+                Item::Hint(_) => {}
                 Item::Frame(..) | Item::Fr(..) => break,
             }
         }
@@ -198,6 +205,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
             match *item {
                 Item::Abs(amount, 1..) => return amount,
                 Item::Tag(_) | Item::Abs(..) | Item::Placed(..) => {}
+                Item::Hint(_) => {}
                 Item::Frame(..) | Item::Fr(..) => break,
             }
         }
@@ -421,6 +429,7 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
                     used.y += frame.height();
                     used.x.set_max(frame.width());
                 }
+                Item::Hint(_) => {}
                 Item::Tag(_) | Item::Placed(..) => {}
             }
         }
@@ -489,6 +498,11 @@ impl<'a, 'b> Distributor<'a, 'b, '_, '_, '_> {
                     offset += frame.height();
 
                     output.push_frame(pos, frame);
+                }
+                Item::Hint(c) => {
+                    let mut frame = Frame::soft(Size::zero());
+                    frame.push(Point::zero(), FrameItem::ContentHint(c));
+                    output.push_frame(Point::zero(), frame);
                 }
                 Item::Placed(frame, placed) => {
                     let x = placed.align_x.position(size.x - frame.width());

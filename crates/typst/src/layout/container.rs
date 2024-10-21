@@ -565,6 +565,8 @@ impl Packed<BlockElem> {
             frame.label(label);
         }
 
+        frame.push(super::Point::zero(), super::FrameItem::ContentHint('\n'));
+
         Ok(frame)
     }
 }

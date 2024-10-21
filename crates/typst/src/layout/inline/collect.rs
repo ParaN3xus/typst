@@ -41,6 +41,8 @@ pub enum Item<'a> {
     /// An item that is invisible and needs to be skipped, e.g. a Unicode
     /// isolate.
     Skip(&'static str),
+    /// A hint string for text selection.
+    Hint(char),
 }
 
 impl<'a> Item<'a> {
@@ -68,6 +70,7 @@ impl<'a> Item<'a> {
             Self::Absolute(_, _) | Self::Fractional(_, _) => SPACING_REPLACE,
             Self::Frame(_, _) => OBJ_REPLACE,
             Self::Tag(_) => "",
+            Self::Hint(_) => "",
             Self::Skip(s) => s,
         }
     }
@@ -84,6 +87,7 @@ impl<'a> Item<'a> {
             Self::Absolute(v, _) => *v,
             Self::Frame(frame, _) => frame.width(),
             Self::Fractional(_, _) | Self::Tag(_) => Abs::zero(),
+            Self::Hint(_) => Abs::zero(),
             Self::Skip(_) => Abs::zero(),
         }
     }
@@ -186,6 +190,7 @@ pub fn collect<'a>(
         } else if let Some(elem) = child.to_packed::<LinebreakElem>() {
             collector
                 .push_text(if elem.justify(styles) { "\u{2028}" } else { "\n" }, styles);
+            collector.push_item(Item::Hint('\n'));
         } else if let Some(elem) = child.to_packed::<SmartQuoteElem>() {
             let double = elem.double(styles);
             if elem.enabled(styles) {
