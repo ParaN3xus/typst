@@ -1521,6 +1521,8 @@ impl<'a> GridLayouter<'a> {
                 }
             }
 
+            let mut frame = frame;
+            frame.set_content_hint('\n');
             output.push_frame(pos, frame);
             rrows.push(RowPiece { height, y });
             pos.y += height;
