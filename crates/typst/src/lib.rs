@@ -283,7 +283,7 @@ impl Document for HtmlDocument {
     }
 }
 
-mod sealed {
+pub mod sealed {
     use typst_library::foundations::{Content, Target};
 
     use super::*;
