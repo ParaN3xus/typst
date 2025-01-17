@@ -14,6 +14,7 @@ use crate::foundations::{
     Selector, Show,
 };
 use crate::introspection::Locatable;
+use crate::math::EquationElem;
 use crate::syntax::Span;
 use crate::text::{FontFamily, FontList, TextElem};
 use crate::utils::LazyHash;
@@ -211,7 +212,9 @@ impl Debug for Styles {
 
 impl Repr for Styles {
     fn repr(&self) -> EcoString {
-        "..".into()
+        let styles: Vec<EcoString> =
+            self.0.iter().map(|s| s.clone().into_inner().repr()).collect();
+        format!("[{}]", styles.join(", ")).into()
     }
 }
 
@@ -295,6 +298,23 @@ impl Style {
     }
 }
 
+impl Repr for Style {
+    fn repr(&self) -> EcoString {
+        match self {
+            Style::Property(property) => {
+                format!("{{\"type\": \"property\", \"style\": {}}}", property.repr())
+            }
+            Style::Recipe(_) => {
+                format!("{{\"type\": \"recipe\", \"style\": \"..\"}}")
+            }
+            Style::Revocation(_) => {
+                format!("{{\"type\": \"revocation\", \"style\": \"..\"}}")
+            }
+        }
+        .into()
+    }
+}
+
 impl Debug for Style {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
@@ -364,6 +384,42 @@ impl Property {
     /// Turn this property into prehashed style.
     pub fn wrap(self) -> LazyHash<Style> {
         Style::Property(self).wrap()
+    }
+}
+
+macro_rules! match_func_field {
+    ($func:expr, $field:expr, {
+        $(($func_name:expr, $field_name:expr) => $result:expr),*
+        $(,)?
+    }) => {
+        {
+            let result: EcoString = match $func {
+                $($func_name => match $field {
+                    $field_name => $result.to_string(),
+                    _ => "unknown".into(),
+                },)*
+                _ => "unknown".into(),
+            }
+            .into();
+            result
+        }
+    };
+}
+
+impl Repr for Property {
+    fn repr(&self) -> EcoString {
+        let func = self.elem.name();
+        let field = self.elem.field_name(self.id).unwrap();
+
+        let style = Styles::from(Style::from(self.clone()));
+        let styles = StyleChain::new(&style);
+
+        let v = match_func_field!(func, field, {
+            ("equation", "italic") => EquationElem::italic_in(styles).unwrap_or_default(),
+            ("equation", "bold") => EquationElem::bold_in(styles),
+        });
+
+        format!("{{\"{field}\": {v}}}").into()
     }
 }
 
