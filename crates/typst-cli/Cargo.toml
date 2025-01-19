@@ -54,6 +54,8 @@ toml = { workspace = true }
 ureq = { workspace = true }
 xz2 = { workspace = true, optional = true }
 zip = { workspace = true, optional = true }
+strum_macros = "0.26.4"
+strum = "0.26.3"
 
 [build-dependencies]
 chrono = { workspace = true }

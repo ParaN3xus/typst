@@ -387,25 +387,6 @@ impl Property {
     }
 }
 
-macro_rules! match_func_field {
-    ($func:expr, $field:expr, {
-        $(($func_name:expr, $field_name:expr) => $result:expr),*
-        $(,)?
-    }) => {
-        {
-            let result: EcoString = match $func {
-                $($func_name => match $field {
-                    $field_name => $result.to_string(),
-                    _ => "unknown".into(),
-                },)*
-                _ => "unknown".into(),
-            }
-            .into();
-            result
-        }
-    };
-}
-
 impl Repr for Property {
     fn repr(&self) -> EcoString {
         let func = self.elem.name();
@@ -414,12 +395,22 @@ impl Repr for Property {
         let style = Styles::from(Style::from(self.clone()));
         let styles = StyleChain::new(&style);
 
-        let v = match_func_field!(func, field, {
-            ("equation", "italic") => EquationElem::italic_in(styles).unwrap_or_default(),
-            ("equation", "bold") => EquationElem::bold_in(styles),
-        });
+        let result: EcoString = match func {
+            "equation" => match field {
+                "italic" => {
+                    EquationElem::italic_in(styles).unwrap_or_default().to_string()
+                }
+                "bold" => EquationElem::bold_in(styles).to_string(),
+                "variant" => {
+                    format!("\"{}\"", EquationElem::variant_in(styles).to_string())
+                }
+                _ => "unknown".into(),
+            },
+            _ => "unknown".into(),
+        }
+        .into();
 
-        format!("{{\"{field}\": {v}}}").into()
+        format!("{{\"{field}\": {result}}}").into()
     }
 }
 

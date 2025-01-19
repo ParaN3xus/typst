@@ -3,6 +3,7 @@ use crate::layout::Abs;
 use crate::math::{EquationElem, MathContext};
 use crate::text::TextElem;
 use crate::utils::LazyHash;
+use strum_macros::Display;
 
 /// Bold font style in math.
 ///
@@ -256,7 +257,7 @@ impl MathSize {
 }
 
 /// A mathematical style variant, as defined by Unicode.
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Cast, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Cast, Hash, Display)]
 pub enum MathVariant {
     #[default]
     Serif,
