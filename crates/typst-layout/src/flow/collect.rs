@@ -169,6 +169,14 @@ impl<'a> Collector<'a, '_, '_> {
         )?
         .into_frames();
 
+        let mut lines = lines;
+        if let Some(line) = lines.last_mut() {
+            if line.content_hint() == '\0' {
+                line.set_content_hint('\n');
+            }
+        }
+        let lines = lines;
+
         let spacing = ParElem::spacing_in(styles);
         self.output.push(Child::Rel(spacing.into(), 4));
 
@@ -432,7 +440,14 @@ fn layout_single_impl(
     };
 
     layout_and_modify(styles, |styles| {
-        layout_single_block(elem, &mut engine, locator, styles, region)
+        layout_single_block(elem, &mut engine, locator, styles, region).map(
+            |mut frame| {
+                if !frame.is_empty() {
+                    frame.set_content_hint('\n');
+                }
+                frame
+            },
+        )
     })
 }
 
