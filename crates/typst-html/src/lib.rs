@@ -1,7 +1,7 @@
 //! Typst's HTML exporter.
 
 mod attr;
-mod charsets;
+pub mod charsets;
 mod convert;
 mod css;
 mod document;
@@ -9,7 +9,7 @@ mod dom;
 mod encode;
 mod fragment;
 mod rules;
-mod tag;
+pub mod tag;
 mod typed;
 
 pub use self::document::html_document;
